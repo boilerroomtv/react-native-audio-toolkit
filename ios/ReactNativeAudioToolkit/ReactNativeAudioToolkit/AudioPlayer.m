@@ -49,7 +49,7 @@
 }
 
 - (AVPlayer *)playerForKey:(nonnull NSNumber *)key {
-    return [_playerPool objectForKey:key];
+    return _playerPool[key];
 }
 
 - (NSNumber *)keyForPlayer:(nonnull AVPlayer *)player {
@@ -160,12 +160,12 @@ RCT_EXPORT_METHOD(prepare:(nonnull NSNumber *)playerId
 
     // If successful, check options and add to player pool
     if (player) {
-        NSNumber *autoDestroy = [options objectForKey:@"autoDestroy"];
+        NSNumber *autoDestroy = options[@"autoDestroy"];
         if (autoDestroy) {
             player.autoDestroy = [autoDestroy boolValue];
         }
 
-        [[self playerPool] setObject:player forKey:playerId];
+        self.playerPool[playerId] = player;
         [self setLastPlayerId:playerId];
 
 
@@ -285,12 +285,12 @@ RCT_EXPORT_METHOD(set:(nonnull NSNumber*)playerId withOpts:(NSDictionary*)option
         return;
     }
 
-    NSNumber *volume = [options objectForKey:@"volume"];
+    NSNumber *volume = options[@"volume"];
     if (volume) {
         [player setVolume:[volume floatValue]];
     }
 
-    NSNumber *looping = [options objectForKey:@"looping"];
+    NSNumber *looping = options[@"looping"];
     if (looping) {
         player.looping = [looping boolValue];
     }
