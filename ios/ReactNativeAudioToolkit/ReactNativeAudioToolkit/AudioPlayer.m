@@ -20,6 +20,7 @@
 @interface AudioPlayer ()
 
 @property (nonatomic, strong) NSMutableDictionary *playerPool;
+@property (nonatomic, strong) NSMutableDictionary *callbackPool;
 @property (nonatomic, strong) NSNumber *lastPlayerId;
 
 @end
@@ -37,6 +38,7 @@
                                                  selector:@selector(audioSessionInterruptionNotification:)
                                                      name:AVAudioSessionInterruptionNotification
                                                    object:session];
+        _callbackPool = [NSMutableDictionary new];
     }
     return self;
 }
@@ -48,11 +50,11 @@
     return _playerPool;
 }
 
-- (AVPlayer *)playerForKey:(nonnull NSNumber *)key {
+- (ReactPlayer *)playerForKey:(nonnull NSNumber *)key {
     return _playerPool[key];
 }
 
-- (NSNumber *)keyForPlayer:(nonnull AVPlayer *)player {
+- (NSNumber *)keyForPlayer:(nonnull ReactPlayer *)player {
     return [[_playerPool allKeysForObject:player] firstObject];
 }
 
@@ -70,6 +72,8 @@
 
 - (void)dealloc {
     for (ReactPlayer *player in [self playerPool]) {
+        [player removeObserver:self forKeyPath:@"status"];
+
         NSNumber *playerId = [self keyForPlayer:player];
         [self destroyPlayerWithId:playerId];
     }
@@ -168,7 +172,10 @@ RCT_EXPORT_METHOD(prepare:(nonnull NSNumber *)playerId
         self.playerPool[playerId] = player;
         [self setLastPlayerId:playerId];
 
-
+        [player addObserver:self
+                 forKeyPath:@"status"
+                    options:NSKeyValueObservingOptionNew
+                    context:nil];
     } else {
         NSString *errMsg = [NSString stringWithFormat:@"Could not initialize player, error: %@", error];
         NSDictionary *dict = [Helpers errObjWithCode:@"preparefail"
@@ -177,38 +184,32 @@ RCT_EXPORT_METHOD(prepare:(nonnull NSNumber *)playerId
         return;
     }
 
-    // Prepare the player
-    // Wait until player is ready
-    while (player.currentItem.status == AVPlayerStatusUnknown) {
-        [NSThread sleepForTimeInterval:0.01f];
+    // Save callback, we'll invoke it when the player is ready, which we get notified
+    // of in observeValueForKeyPath: below
+    self.callbackPool[playerId] = callback;
+}
+
+- (void)observeValueForKeyPath:(NSString *)keyPath
+                      ofObject:(id)object
+                        change:(NSDictionary *)change
+                       context:(void *)context {
+    if ([keyPath isEqualToString:@"status"]) {
+        ReactPlayer *player = (ReactPlayer *)object;
+        [self invokeCallbackForPlayer:player];
+    }
+}
+
+- (void)invokeCallbackForPlayer:(ReactPlayer *)player {
+    NSNumber *playerId = [self keyForPlayer:player];
+    RCTResponseSenderBlock callback = self.callbackPool[playerId];
+
+    if (!callback) {
+        return;
     }
 
-    //make sure loadedTimeRanges is not null
-    while (player.currentItem.loadedTimeRanges.firstObject == nil){
-        [NSThread sleepForTimeInterval:0.01f];
-    }
-
-    //wait until 10 seconds are buffered then play
-    float version = [[[UIDevice currentDevice] systemVersion] floatValue];
-    if (version >= 10.0) {
-        player.currentItem.preferredForwardBufferDuration = 500;
-    }
-    Float64 durationSeconds = 0;
-    while (durationSeconds < 10){
-        NSValue *val = player.currentItem.loadedTimeRanges.firstObject;
-        CMTimeRange timeRange;
-        [val getValue:&timeRange];
-        durationSeconds = CMTimeGetSeconds(timeRange.duration);
-        [NSThread sleepForTimeInterval:0.01f];
-    }
-
-    // Callback when ready / failed
-    if (player.currentItem.status == AVPlayerStatusReadyToPlay) {
-        if (version >= 10.0) {
-            player.automaticallyWaitsToMinimizeStalling = false;
-        }
+    if (player.status == AVPlayerStatusReadyToPlay) {
         callback(@[[NSNull null]]);
-    } else {
+    } else if (player.status == AVPlayerStatusFailed) {
         NSDictionary *dict = [Helpers errObjWithCode:@"preparefail"
                                          withMessage:[NSString stringWithFormat:@"Preparing player failed"]];
 
@@ -218,6 +219,7 @@ RCT_EXPORT_METHOD(prepare:(nonnull NSNumber *)playerId
 
         callback(@[dict]);
     }
+    self.callbackPool[playerId] = nil;
 }
 
 RCT_EXPORT_METHOD(destroy:(nonnull NSNumber*)playerId withCallback:(RCTResponseSenderBlock)callback) {
@@ -357,7 +359,6 @@ RCT_EXPORT_METHOD(resume:(nonnull NSNumber*)playerId withCallback:(RCTResponseSe
 
     callback(@[[NSNull null]]);
 }
-
 
 - (void)itemDidFinishPlaying:(NSNotification *) notification {
     NSNumber *playerId = ((ReactPlayerItem *)notification.object).reactPlayerId;
