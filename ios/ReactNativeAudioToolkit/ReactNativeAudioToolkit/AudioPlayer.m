@@ -162,6 +162,12 @@ RCT_EXPORT_METHOD(prepare:(nonnull NSNumber *)playerId
     ReactPlayer *player = [[ReactPlayer alloc]
                         initWithPlayerItem:item];
 
+    // If we don't set this property the player appears to play
+    //(so we update currentTime etc) but the system has actually paused playback to buffer
+    if ([player respondsToSelector:@selector(setAutomaticallyWaitsToMinimizeStalling:)]) {
+        player.automaticallyWaitsToMinimizeStalling = NO;
+    }
+
     // If successful, check options and add to player pool
     if (player) {
         NSNumber *autoDestroy = options[@"autoDestroy"];
@@ -173,7 +179,7 @@ RCT_EXPORT_METHOD(prepare:(nonnull NSNumber *)playerId
         [self setLastPlayerId:playerId];
 
         [player addObserver:self
-                 forKeyPath:@"status"
+                 forKeyPath:@"currentItem.loadedTimeRanges"
                     options:NSKeyValueObservingOptionNew
                     context:nil];
     } else {
@@ -193,7 +199,7 @@ RCT_EXPORT_METHOD(prepare:(nonnull NSNumber *)playerId
                       ofObject:(id)object
                         change:(NSDictionary *)change
                        context:(void *)context {
-    if ([keyPath isEqualToString:@"status"]) {
+    if ([keyPath isEqualToString:@"currentItem.loadedTimeRanges"]) {
         ReactPlayer *player = (ReactPlayer *)object;
         [self invokeCallbackForPlayer:player];
     }
@@ -203,12 +209,17 @@ RCT_EXPORT_METHOD(prepare:(nonnull NSNumber *)playerId
     NSNumber *playerId = [self keyForPlayer:player];
     RCTResponseSenderBlock callback = self.callbackPool[playerId];
 
+    // If theres no callback that means we've already called the callback
+    // for this player, and have since disposed of it.
     if (!callback) {
         return;
     }
 
-    if (player.status == AVPlayerStatusReadyToPlay) {
+    CMTimeRange timeRange = player.currentItem.loadedTimeRanges.firstObject.CMTimeRangeValue;
+    Float64 loadedSeconds = CMTimeGetSeconds(timeRange.duration);
+    if (loadedSeconds > 10) {
         callback(@[[NSNull null]]);
+        self.callbackPool[playerId] = nil;
     } else if (player.status == AVPlayerStatusFailed) {
         NSDictionary *dict = [Helpers errObjWithCode:@"preparefail"
                                          withMessage:[NSString stringWithFormat:@"Preparing player failed"]];
@@ -218,8 +229,8 @@ RCT_EXPORT_METHOD(prepare:(nonnull NSNumber *)playerId
         }
 
         callback(@[dict]);
+        self.callbackPool[playerId] = nil;
     }
-    self.callbackPool[playerId] = nil;
 }
 
 RCT_EXPORT_METHOD(destroy:(nonnull NSNumber*)playerId withCallback:(RCTResponseSenderBlock)callback) {
