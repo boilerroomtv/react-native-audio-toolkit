@@ -162,6 +162,12 @@ RCT_EXPORT_METHOD(prepare:(nonnull NSNumber *)playerId
     ReactPlayer *player = [[ReactPlayer alloc]
                         initWithPlayerItem:item];
 
+    // If we don't set this property the player appears to play
+    //(so we update currentTime etc) but the system has actually paused playback to buffer
+    if ([player respondsToSelector:@selector(setAutomaticallyWaitsToMinimizeStalling:)]) {
+        player.automaticallyWaitsToMinimizeStalling = NO;
+    }
+
     // If successful, check options and add to player pool
     if (player) {
         NSNumber *autoDestroy = options[@"autoDestroy"];
