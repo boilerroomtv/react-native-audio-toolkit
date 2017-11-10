@@ -17,6 +17,8 @@
 #import <AVFoundation/AVPlayerItem.h>
 #import <AVFoundation/AVAsset.h>
 
+static NSString *const currentItemsLoadedTimeRangeKeyPath = @"currentItem.loadedTimeRanges";
+
 @interface AudioPlayer ()
 
 @property (nonatomic, strong) NSMutableDictionary *playerPool;
@@ -72,7 +74,7 @@
 
 - (void)dealloc {
     for (ReactPlayer *player in [self playerPool]) {
-        [player removeObserver:self forKeyPath:@"status"];
+        [player removeObserver:self forKeyPath:currentItemsLoadedTimeRangeKeyPath];
 
         NSNumber *playerId = [self keyForPlayer:player];
         [self destroyPlayerWithId:playerId];
@@ -179,7 +181,7 @@ RCT_EXPORT_METHOD(prepare:(nonnull NSNumber *)playerId
         [self setLastPlayerId:playerId];
 
         [player addObserver:self
-                 forKeyPath:@"currentItem.loadedTimeRanges"
+                 forKeyPath:currentItemsLoadedTimeRangeKeyPath
                     options:NSKeyValueObservingOptionNew
                     context:nil];
     } else {
@@ -199,7 +201,7 @@ RCT_EXPORT_METHOD(prepare:(nonnull NSNumber *)playerId
                       ofObject:(id)object
                         change:(NSDictionary *)change
                        context:(void *)context {
-    if ([keyPath isEqualToString:@"currentItem.loadedTimeRanges"]) {
+    if ([keyPath isEqualToString:currentItemsLoadedTimeRangeKeyPath]) {
         ReactPlayer *player = (ReactPlayer *)object;
         [self invokeCallbackForPlayer:player];
     }
