@@ -74,8 +74,6 @@ static NSString *const currentItemsLoadedTimeRangeKeyPath = @"currentItem.loaded
 
 - (void)dealloc {
     for (ReactPlayer *player in [self playerPool]) {
-        [player removeObserver:self forKeyPath:currentItemsLoadedTimeRangeKeyPath];
-
         NSNumber *playerId = [self keyForPlayer:player];
         [self destroyPlayerWithId:playerId];
     }
@@ -405,6 +403,7 @@ RCT_EXPORT_METHOD(resume:(nonnull NSNumber*)playerId withCallback:(RCTResponseSe
 - (void)destroyPlayerWithId:(NSNumber *)playerId {
     ReactPlayer *player = (ReactPlayer *)[self playerForKey:playerId];
     if (player) {
+        [player removeObserver:self forKeyPath:currentItemsLoadedTimeRangeKeyPath];
         [player pause];
         [[self playerPool] removeObjectForKey:playerId];
 
